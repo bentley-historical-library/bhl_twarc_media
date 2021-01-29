@@ -90,6 +90,8 @@ def fetch_media_for_feed(feed_dict):
                 filename = row[2]
                 profile_image_urls[url] = {'profile_dir': profile_dir, 'filename': filename}
 
+# ========================================== 
+
     # Download Tweet Media
         with requests.Session() as s:
             for url in media_urls:
@@ -101,10 +103,10 @@ def fetch_media_for_feed(feed_dict):
                     if e.getcode()==200:
                         live_tweets.append(url)
                     else:
-                        if e.getcode() !=200:
-                            print(e, url)
-                            logger.info("{0} > {1}".format(e,url))
-                            dead_tweets.append(url)
+                       # if e.getcode() !=200:
+                        print(e, url)
+                        logger.info("{0} > {1}".format(e,url))
+                        dead_tweets.append(url)
 
                 except urllib.error.URLError as e:
                     logger.info("{0} stopped at > {1}".format(e,url))
@@ -138,7 +140,7 @@ def fetch_media_for_feed(feed_dict):
                         print("Fetching Tweet Media > {0}".format(media_urls[url]))
                     time.sleep(1)
 
-
+# ========================================== 
     # Downloading Profile Images
         with requests.Session() as s:
             for url in profile_image_urls:
@@ -147,50 +149,99 @@ def fetch_media_for_feed(feed_dict):
                 profile_dir = join(profile_images_dir, profile_dir_name)
                 profile_folder = os.path.split(profile_dir)
 
-                try:
-                    response = urllib.request.urlopen(url)
+                if not os.path.exists(profile_dir):
+                    os.makedirs(profile_dir)
+                    logger.info("CREATNG profile_dir > {0}: {1}".format(profile_folder[1],url))
+                    print(("CREATNG profile_dir > {0}: {1}".format(profile_folder[1],url)))
 
-                except urllib.error.HTTPError as e:
-                    if e.getcode()==200:
-                        live_profiles.append(url)
-                    else:
-                        if e.getcode() !=200:
+                if filename not in os.listdir(profile_dir):
+                    new_profiles.append(filename)
+
+                    try:
+                        response = urllib.request.urlopen(url)
+
+                    except urllib.error.HTTPError as e:
+                        if e.getcode()==200:
+                            live_profiles.append(url)
+
+                        else:
+                           # if e.getcode() !=200:
                             print(e, url)
                             logger.info("{0} > {1}".format(e,url))
                             dead_profiles.append(url)
+                            continue
+                    except requests.exceptions.Timeout as e:
+                        logger.info("{0} stopped at > {1}".format(e,url))
+                        print("{0} stopped at > {1}".format(e,url))
+                        print("*** RETRY ADAPTER ACTIVATED ***")
+                        time.sleep(60)
+                        continue
+                    except requests.exceptions.ConnectionError as e:
+                        logger.info("{0} stopped at > {1}".format(e,url))
+                        print("{0} stopped at > {1}".format(e,url))
+                        print("*** RETRY ADAPTER ACTIVATED ***")
+                        time.sleep(60)
+                        continue
+                    # sAdapt = s.mount('http://',adapter)
+                    # profile_image = sAdapt.get(url)
+                    profile_image = s.get(url)
+                    profile_image_file = join(profile_dir, filename)
+                    with open(profile_image_file, 'wb') as profile_image_out:
+                        profile_image_out.write(profile_image.content)
+                    logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],url))
+                    print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],filename))
+                    time.sleep(1)
 
-                except urllib.error.URLError as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
-                    print("*** RETRY ADAPTER ACTIVATED ***")
 
-                except requests.exceptions.Timeout as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
+            # Check if PROFILE ID folder exists
+                else:
+                    if os.path.exists(profile_dir):
+                    # If profile_dir and image already exist
+                        if filename in os.listdir(profile_dir):
+                            stale_profiles.append(filename)
+                            print("OLD Profile Media > {0}: {1}".format(profile_folder[1], filename))
+                            continue
+                        else:
+                        # If profile_dir exists but not the image
+                            if filename not in os.listdir(profile_dir):
+                                new_profiles.append(filename)
 
-                except requests.exceptions.ConnectionError as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
+                                try:
+                                    response = urllib.request.urlopen(url)
+                                except (urllib.error.URLError,urllib.error.HTTPError) as e:
+                                    if e.getcode()==200:
+                                        live_profiles.append(url)
+                                    else:
+                                        if e.getcode() !=200:
+                                            print(e, url)
+                                            logger.info("{0} > {1}".format(e,url))
+                                            dead_profiles.append(url)
+                                            continue
 
-            # Check if ID folder exists
-                if not os.path.exists(profile_dir):
-                    logger.info("CREATNG profile_dir > {0}: {1}".format(profile_folder[1],url))
-                    os.makedirs(profile_dir)
+                                except requests.exceptions.Timeout as e:
+                                    logger.info("{0} stopped at > {1}".format(e,url))
+                                    print("{0} stopped at > {1}".format(e,url))
+                                    print("*** RETRY ADAPTER ACTIVATED ***")
+                                    time.sleep(60)
+                                    continue
+                                except requests.exceptions.ConnectionError as e:
+                                    logger.info("{0} stopped at > {1}".format(e,url))
+                                    print("{0} stopped at > {1}".format(e,url))
+                                    print("*** RETRY ADAPTER ACTIVATED ***")
+                                    time.sleep(60)
+                                    continue
 
-                # Check if image exists in ID folder immediately after identifying the profile_dir
-                    if filename not in os.listdir(profile_dir):
-                        live_profiles.append(filename)
-                        logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],url))
-                        # sAdapt = s.mount('http://',adapter)
-                        # profile_image = sAdapt.get(url)
-                        profile_image = s.get(url)
-                        profile_image_file = join(profile_dir, filename)
-                        with open(profile_image_file, 'wb') as profile_image_out:
-                            profile_image_out.write(profile_image.content)
-                        time.sleep(1)
-                        print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],filename))
-                    else:
-                        stale_profiles.append(filename)
+                                logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],url))
+                                print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],filename))
+
+                                # sAdapt = s.mount('http://',adapter)
+                                # profile_image = sAdapt.get(url)
+                                profile_image = s.get(url)
+                                profile_image_file = join(profile_dir, filename)
+                                with open(profile_image_file, 'wb') as profile_image_out:
+                                    profile_image_out.write(profile_image.content)
+                                time.sleep(1)
+
 
     return
 
