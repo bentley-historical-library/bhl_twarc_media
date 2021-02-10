@@ -6,38 +6,45 @@ import logging
 import os
 from os.path import join
 import requests
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 import time
 import urllib.request
 import urllib.parse
 
 dead_tweets = []
 stale_tweets = []
-live_tweets = []
+del_tweets = []
 new_tweets = []
 
 dead_profiles = []
 stale_profiles = []
-live_profiles = []
+del_profs = []
 new_profiles = []
 
+profile_image_urls = {}
+media_urls = {}
 
 def fetch_media_for_feed(feed_dict):
-
-    # Loop through my list of folders
+## Loop through list of folders
     for feeds in feed_dict:
+        global short_name
+        global feed
+        global media_dir
+        global image_dir
+        global profile_images_dir
+        global logger
+
         short_name = feeds
-        feeds = join(feed_dir, feeds)
-        media_dir = join(feeds, 'media')
+        feed = join(feed_dir, feeds)
+        media_dir = join(feed, 'media')
         image_dir = join(media_dir, 'tweet_images')
         profile_images_dir = join(media_dir, 'profile_images')
 
-    # Log creation
+    ## Log creation
         logs_dir = join(media_dir, 'media_logs')
-        log_file = join(logs_dir, 'twarc.log')
+        log_file = join(logs_dir, 'media.log')
 
-    # Loop through each folder and make directories
+
+    ## Loop through each individual folder and make directories
         for directory in [feed_dir, media_dir, logs_dir]:
             if not os.path.exists(image_dir):
                 os.makedirs(image_dir)
@@ -49,7 +56,7 @@ def fetch_media_for_feed(feed_dict):
                 os.makedirs(logs_dir)
                 print("Creating logs directory for {0}".format(logs_dir))
 
-    # LOGGING formatting
+    ## LOGGING formatting
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
         logger = logging.getLogger(short_name)
         handler = logging.FileHandler(log_file)
@@ -57,202 +64,176 @@ def fetch_media_for_feed(feed_dict):
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
-    # Setting up CSV dictionaries
+    ## Setting up CSV dictionaries
         media_urls_csv = join(media_dir, 'tweet_images.csv')
         profile_image_csv = join(media_dir, 'profile_images.csv')
 
-        media_urls = {}
-        profile_image_urls = {}
-
+    ## Turn on the logger
         logger.info("Starting media downloads for %s", short_name)
 
-    # Forcing the request to retry after a URLError
-        retry_strategy = Retry(total=25,backoff_factor=60,status_forcelist=[429,500,502,503,504])
-            # Retry the quest a maximum of 25 times with 60 seconds in between retries
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        # adapter = requests.adapters.HTTPAdapter(max_retries = 20)
+## ============================================
+## ===== Sorting ===== Tweet ===== Images =====
+## ============================================
+## Reading tweet_images.csv
+    with open(media_urls_csv, 'r', newline="") as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            url = row[0]
+            filename = row[1]
+            media_urls[url] = filename
 
-
-    # Reading tweet_images.csv
-        with open(media_urls_csv, 'r', newline="") as csvfile:
-            reader = csv.reader(csvfile)
-            for row in reader:
-                url = row[0]
-                filename = row[1]
-                media_urls[url] = filename
-
-    # Reading profile_images.csv
-        with open(profile_image_csv, 'r', newline="") as csvfile:
-            reader = csv.reader(csvfile)
-            for row in reader:
-                url = row[0]
-                profile_dir = row[1]
-                filename = row[2]
-                profile_image_urls[url] = {'profile_dir': profile_dir, 'filename': filename}
-
-# ========================================== 
-
-    # Download Tweet Media
-        with requests.Session() as s:
-            for url in media_urls:
-            # Sort inactive URLs
+    ## If TWEET image already exists
+        print("Sorting TWEETS...")
+        for url in media_urls:
+            if media_urls[url] not in os.listdir(image_dir):
                 try:
-                   status_code = urllib.request.urlopen(url)
-
+                    status_code = urllib.request.urlopen(url)
                 except urllib.error.HTTPError as e:
-                    if e.getcode()==200:
-                        live_tweets.append(url)
-                    else:
-                       # if e.getcode() !=200:
-                        print(e, url)
-                        logger.info("{0} > {1}".format(e,url))
-                        dead_tweets.append(url)
-
-                except urllib.error.URLError as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
-                    print("*** RETRY ADAPTER ACTIVATED ***")
-
-                except requests.exceptions.Timeout as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
-
-                except requests.exceptions.ConnectionError as e:
-                    logger.info("{0} stopped at > {1}".format(e,url))
-                    print("{0} stopped at > {1}".format(e,url))
-
-            # Check if the image has already been downloaded
-                if media_urls[url] in os.listdir(image_dir):
-                    logger.info("OLD Tweet Media > {0}".format(url))
-                    stale_tweets.append(url)
+                    logger.info("{0} > {1}".format(e, url))
+                if status_code.getcode() == 200:
                     continue
-
-            # If the image hasn't already been downloaded
                 else:
-                    new_tweets.append(url)
-                    logger.info("FETCHING Tweet Media > {0}".format(url))
-                    # sAdapt = s.mount('http://',adapter)
-                    # media = sAdapt.get(url)
-                    media = s.get(url)
-                    media_file = join(image_dir, media_urls[url])
-                    with open(media_file, 'wb') as media_out:
-                        media_out.write(media.content)
-                        print("Fetching Tweet Media > {0}".format(media_urls[url]))
-                    time.sleep(1)
+                    dead_tweets.append(url)
+                    del_tweets.append(url)
+                    continue
+    ## If TWEET image doesn't exist
+            else:
+                logger.info("OLD Tweet Media > {0}".format(url))
+                stale_tweets.append(url)
+                del_tweets.append(url)
 
-# ========================================== 
-    # Downloading Profile Images
-        with requests.Session() as s:
-            for url in profile_image_urls:
-                profile_dir_name = profile_image_urls[url]['profile_dir']
-                filename = profile_image_urls[url]['filename']
-                profile_dir = join(profile_images_dir, profile_dir_name)
-                profile_folder = os.path.split(profile_dir)
+        for x in del_tweets:
+            if x in media_urls.keys():
+                del media_urls[x]
+            else:
+                continue
+        get_tweets(media_urls)
 
-                if not os.path.exists(profile_dir):
+## ==============================================
+## ===== Sorting ===== Profile ===== Images =====
+## ==============================================
+## Reading profile_images.csv
+    with open(profile_image_csv, 'r', newline="") as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            url = row[0]
+            profile_dir = row[1]
+            filename = row[2]
+            profile_image_urls[url] = {'profile_dir': profile_dir, 'filename': filename}
+
+    ## Sorting
+        print("Sorting PROFILES...")
+        for url in profile_image_urls:
+            profile_dir_name = profile_image_urls[url]['profile_dir']
+            filename = profile_image_urls[url]['filename']
+            profile_dir = join(profile_images_dir, profile_dir_name)
+            profile_folder = os.path.split(profile_dir)
+
+    ## Check for new profile directories 1st
+            if os.path.isdir(profile_dir) == False:
+                try:
+                    res = urllib.request.urlopen(url)
+                except urllib.error.HTTPError as e:
+                    logger.info("{0} > {1}".format(res, url))
+                if res.getcode() != 200:
+                    logger.info("{0} > {1}".format(res, url))
+                    dead_profiles.append(url)
+                    del_profs.append(url)
+                else:
                     os.makedirs(profile_dir)
-                    logger.info("CREATNG profile_dir > {0}: {1}".format(profile_folder[1],url))
-                    print(("CREATNG profile_dir > {0}: {1}".format(profile_folder[1],url)))
+                    logger.info("CREATNG profile_dir > {0}: {1}".format(profile_folder[1], filename))
+                    print(("CREATNG profile_dir > {0}: {1}".format(profile_folder[1], filename)))
 
-                if filename not in os.listdir(profile_dir):
-                    new_profiles.append(filename)
-
-                    try:
-                        response = urllib.request.urlopen(url)
-
-                    except urllib.error.HTTPError as e:
-                        if e.getcode()==200:
-                            live_profiles.append(url)
-
-                        else:
-                           # if e.getcode() !=200:
-                            print(e, url)
-                            logger.info("{0} > {1}".format(e,url))
-                            dead_profiles.append(url)
-                            continue
-                    except requests.exceptions.Timeout as e:
-                        logger.info("{0} stopped at > {1}".format(e,url))
-                        print("{0} stopped at > {1}".format(e,url))
-                        print("*** RETRY ADAPTER ACTIVATED ***")
-                        time.sleep(60)
-                        continue
-                    except requests.exceptions.ConnectionError as e:
-                        logger.info("{0} stopped at > {1}".format(e,url))
-                        print("{0} stopped at > {1}".format(e,url))
-                        print("*** RETRY ADAPTER ACTIVATED ***")
-                        time.sleep(60)
-                        continue
-                    # sAdapt = s.mount('http://',adapter)
-                    # profile_image = sAdapt.get(url)
-                    profile_image = s.get(url)
-                    profile_image_file = join(profile_dir, filename)
-                    with open(profile_image_file, 'wb') as profile_image_out:
-                        profile_image_out.write(profile_image.content)
-                    logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],url))
-                    print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],filename))
-                    time.sleep(1)
-
-
-            # Check if PROFILE ID folder exists
+       ## If profile_dir already exists
+            if os.path.exists(profile_dir):
+            ## If image already exists
+                if filename in os.listdir(profile_dir):
+                    ## URL won't delete Directory later
+                    stale_profiles.append(url)
+                    del_profs.append(url)
+                    logger.info("OLD Profile Media > {0}: {1}".format(profile_folder[1], filename))
+            ## If profile_dir exists but not image
                 else:
-                    if os.path.exists(profile_dir):
-                    # If profile_dir and image already exist
-                        if filename in os.listdir(profile_dir):
-                            stale_profiles.append(filename)
-                            print("OLD Profile Media > {0}: {1}".format(profile_folder[1], filename))
-                            continue
+                    if filename not in os.listdir(profile_dir):
+                        try:
+                            res = urllib.request.urlopen(url)
+                        except urllib.error.HTTPError as e:
+                            logger.info("{0} > {1}".format(res, url))
+                        if res.getcode() != 200:
+                            logger.info("{0} > {1}".format(res, url))
+                            dead_profiles.append(url)
+                            del_profs.append(url)
                         else:
-                        # If profile_dir exists but not the image
-                            if filename not in os.listdir(profile_dir):
-                                new_profiles.append(filename)
+                            continue
 
-                                try:
-                                    response = urllib.request.urlopen(url)
-                                except (urllib.error.URLError,urllib.error.HTTPError) as e:
-                                    if e.getcode()==200:
-                                        live_profiles.append(url)
-                                    else:
-                                        if e.getcode() !=200:
-                                            print(e, url)
-                                            logger.info("{0} > {1}".format(e,url))
-                                            dead_profiles.append(url)
-                                            continue
+        for x in del_profs:
+            if x in profile_image_urls.keys():
+                del profile_image_urls[x]
+            else:
+                continue
 
-                                except requests.exceptions.Timeout as e:
-                                    logger.info("{0} stopped at > {1}".format(e,url))
-                                    print("{0} stopped at > {1}".format(e,url))
-                                    print("*** RETRY ADAPTER ACTIVATED ***")
-                                    time.sleep(60)
-                                    continue
-                                except requests.exceptions.ConnectionError as e:
-                                    logger.info("{0} stopped at > {1}".format(e,url))
-                                    print("{0} stopped at > {1}".format(e,url))
-                                    print("*** RETRY ADAPTER ACTIVATED ***")
-                                    time.sleep(60)
-                                    continue
+        get_profs(profile_image_urls)
+    return
 
-                                logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],url))
-                                print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1],filename))
+def get_tweets(media_urls):
+    if len(media_urls) != 0:
+        print("Fetching Tweets...")
+        for url in media_urls:
+            global logger
+            logger = logging.getLogger(short_name)
+            with requests.Session() as s:
+                # print("2nd loop > {}".format(url))
+                logger.info("FETCHING Tweet Media > {0}".format(url))
+                print("Fetching Tweet Media > {0}".format(media_urls[url]))
+                media = s.get(url)
+                media_file = join(image_dir, media_urls[url])
+                with open(media_file, 'wb') as media_out:
+                    media_out.write(media.content)
+                new_tweets.append(url)
+                time.sleep(1)
+    else:
+        print("No TWEETS to Download...")
+    return
 
-                                # sAdapt = s.mount('http://',adapter)
-                                # profile_image = sAdapt.get(url)
-                                profile_image = s.get(url)
-                                profile_image_file = join(profile_dir, filename)
-                                with open(profile_image_file, 'wb') as profile_image_out:
-                                    profile_image_out.write(profile_image.content)
-                                time.sleep(1)
+def get_profs(profile_image_urls):
+    if len(profile_image_urls) != 0:
+        print("Fetching PROFILES...")
+        for url in profile_image_urls:
+        ## Need to pull old variables
+            global profile_dir_name
+            global filename
+            global profile_dir
+            global profile_folder
+            global logger
+            logger = logging.getLogger(short_name)
 
+         ## Then call them
+            profile_dir_name = profile_image_urls[url]['profile_dir']
+            filename = profile_image_urls[url]['filename']
+            profile_dir = join(profile_images_dir, profile_dir_name)
+            profile_folder = os.path.split(profile_dir)
 
+        ## Finally make the request
+            with requests.Session() as s:
+                logger.info("FETCHING Profile Media > {0}: {1}".format(profile_folder[1], url))
+                print("FETCHING Profile Media > {0}: {1}".format(profile_folder[1], filename))
+                profile_image = s.get(url)
+                profile_image_file = join(profile_dir, filename)
+                with open(profile_image_file, 'wb') as profile_image_out:
+                    profile_image_out.write(profile_image.content)
+                new_profiles.append(url)
+                time.sleep(1)
+    else:
+        print("No PROFILES to Download...")
     return
 
 fetch_media_for_feed(feed_dict)
 
-print("\nDead Tweet Images:", len(dead_tweets))
-print("Previously Downloadeded Tweet Images:", len(stale_tweets))
-print("Newly Downloaded Tweet Images:", len(new_tweets))
-
-print("\nDead Profile Images:", len(dead_profiles))
-print("Previously Downloadeded Profile Images:", len(stale_profiles))
-print("Newly Downloaded Profile Images:", len(new_profiles))
 now = time.asctime(time.localtime(time.time()))
-print("\nTwitter image downloads finished at: {0}".format(now))
+print("\n--------------------------------------------------------------")
+print("Finished Downloading Twitter Images @ {0}".format(now))
+print("--------------------------------------------------------------")
+print("Tweet Image Stats | New: {0} | Old: {1} | Dead: {2}".format(len(new_tweets),len(stale_tweets),len(dead_tweets)))
+print("--------------------------------------------------------------")
+print("Profile Image Stats | New: {0} | Old: {1} | Dead: {2}".format(len(new_profiles),len(stale_profiles),len(dead_profiles)))
+print("--------------------------------------------------------------\n")
