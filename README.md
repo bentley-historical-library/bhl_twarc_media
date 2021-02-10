@@ -28,7 +28,7 @@ feeds
       media_logs
 ```
 
-* Logs for the downloads will be stored to a `twarc.log` file in the new folder titled `media_logs` 
+* Logs for the downloads will be stored to a `media.log` file in the new folder titled `media_logs` 
 * Uses the same variable (**feed_dict**) to execute as:
   * [build_html.py](https://github.com/bentley-historical-library/bhl_twarc/blob/master/scripts/build_html.py)
   * [build_index.py](https://github.com/bentley-historical-library/bhl_twarc/blob/master/scripts/build_index.py)
@@ -38,3 +38,11 @@ feeds
   
 ### Potential media Directory Alternations
 If the `profile_images` directory and/or `tweet_images` directory are not present, it/they will be created.
+
+
+## 
+When the script finishes its execution the following statistics will print in the CLI:
+* New profile & tweet images: The number of images downloaded from each category.
+* Stale profile & tweet images: The number of previously downloaded URLs from each category.
+* Dead profile & tweet images: The number of URLs from each category that were dead.
+
